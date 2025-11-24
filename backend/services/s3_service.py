@@ -48,3 +48,22 @@ class S3Service:
         except ClientError as e:
             raise Exception(f"Error deleting file from S3: {str(e)}")
 
+    def generate_presigned_url(self, url: str, expiration: int = 3600) -> Optional[str]:
+        """Generate a presigned URL for accessing a private S3 object"""
+        try:
+            # Extract key from URL
+            # URL format: https://bucket-name.s3.region.amazonaws.com/key
+            if url.startswith(f"https://{self.bucket_name}.s3"):
+                key = url.split(f".amazonaws.com/")[-1]
+                
+                # Generate presigned URL
+                presigned_url = self.s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': self.bucket_name, 'Key': key},
+                    ExpiresIn=expiration
+                )
+                return presigned_url
+            return None
+        except ClientError as e:
+            raise Exception(f"Error generating presigned URL: {str(e)}")
+

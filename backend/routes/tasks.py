@@ -13,6 +13,18 @@ dynamo_service = DynamoService()
 s3_service = S3Service()
 
 
+def _convert_to_presigned_url(task: dict) -> dict:
+    """Convert attachmentUrl to presigned URL if it exists"""
+    if task.get("attachmentUrl"):
+        try:
+            presigned_url = s3_service.generate_presigned_url(task["attachmentUrl"])
+            if presigned_url:
+                task["attachmentUrl"] = presigned_url
+        except:
+            pass  # Keep original URL if presigned URL generation fails
+    return task
+
+
 @router.post("/tasks", response_model=Task, status_code=201)
 async def create_task(
     title: str = Form(...),
@@ -58,6 +70,8 @@ async def get_all_tasks():
     """Get all tasks"""
     try:
         tasks = dynamo_service.get_all_tasks()
+        # Convert attachment URLs to presigned URLs
+        tasks = [_convert_to_presigned_url(task) for task in tasks]
         return tasks
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -70,6 +84,8 @@ async def get_task(task_id: str):
         task = dynamo_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+        # Convert attachment URL to presigned URL
+        task = _convert_to_presigned_url(task)
         return task
     except HTTPException:
         raise
@@ -121,8 +137,12 @@ async def update_task(
         # Update task
         if update_data:
             updated_task = dynamo_service.update_task(task_id, update_data)
+            # Convert attachment URL to presigned URL
+            updated_task = _convert_to_presigned_url(updated_task)
             return updated_task
         else:
+            # Convert attachment URL to presigned URL even if no update
+            existing_task = _convert_to_presigned_url(existing_task)
             return existing_task
 
     except HTTPException:
@@ -151,6 +171,29 @@ async def delete_task(task_id: str):
         dynamo_service.delete_task(task_id)
         return None
 
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tasks/{task_id}/attachment")
+async def get_attachment_url(task_id: str):
+    """Get a presigned URL for a task's attachment"""
+    try:
+        task = dynamo_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        attachment_url = task.get("attachmentUrl")
+        if not attachment_url:
+            raise HTTPException(status_code=404, detail="Task has no attachment")
+        
+        presigned_url = s3_service.generate_presigned_url(attachment_url)
+        if not presigned_url:
+            raise HTTPException(status_code=500, detail="Failed to generate presigned URL")
+        
+        return {"url": presigned_url}
     except HTTPException:
         raise
     except Exception as e:

@@ -48,9 +48,16 @@ async def create_task(
         # Save to DynamoDB
         created_task = dynamo_service.create_task(task_data)
         
-        # Replace S3 key with presigned URL in response
+        # Replace S3 key with presigned URL in response (fail gracefully if presigned URL generation fails)
         if created_task.get("attachmentUrl"):
-            created_task["attachmentUrl"] = s3_service.get_presigned_url(created_task["attachmentUrl"])
+            try:
+                presigned_url = s3_service.get_presigned_url(created_task["attachmentUrl"])
+                if presigned_url:
+                    created_task["attachmentUrl"] = presigned_url
+            except Exception:
+                # If presigned URL generation fails, keep the original key
+                # This allows the task to be saved even if S3 presigned URL generation fails
+                pass
         
         return created_task
 
@@ -63,10 +70,17 @@ async def get_all_tasks():
     """Get all tasks"""
     try:
         tasks = dynamo_service.get_all_tasks()
-        # Replace S3 keys with presigned URLs in responses
+        # Replace S3 keys with presigned URLs in responses (fail gracefully if presigned URL generation fails)
         for task in tasks:
             if task.get("attachmentUrl"):
-                task["attachmentUrl"] = s3_service.get_presigned_url(task["attachmentUrl"])
+                try:
+                    presigned_url = s3_service.get_presigned_url(task["attachmentUrl"])
+                    if presigned_url:
+                        task["attachmentUrl"] = presigned_url
+                except Exception:
+                    # If presigned URL generation fails, keep the original key
+                    # This allows tasks to be fetched even if S3 presigned URL generation fails
+                    pass
         return tasks
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -80,9 +94,16 @@ async def get_task(task_id: str):
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         
-        # Replace S3 key with presigned URL in response
+        # Replace S3 key with presigned URL in response (fail gracefully if presigned URL generation fails)
         if task.get("attachmentUrl"):
-            task["attachmentUrl"] = s3_service.get_presigned_url(task["attachmentUrl"])
+            try:
+                presigned_url = s3_service.get_presigned_url(task["attachmentUrl"])
+                if presigned_url:
+                    task["attachmentUrl"] = presigned_url
+            except Exception:
+                # If presigned URL generation fails, keep the original key
+                # This allows the task to be fetched even if S3 presigned URL generation fails
+                pass
         
         return task
     except HTTPException:
@@ -135,14 +156,26 @@ async def update_task(
         # Update task
         if update_data:
             updated_task = dynamo_service.update_task(task_id, update_data)
-            # Replace S3 key with presigned URL in response
+            # Replace S3 key with presigned URL in response (fail gracefully if presigned URL generation fails)
             if updated_task.get("attachmentUrl"):
-                updated_task["attachmentUrl"] = s3_service.get_presigned_url(updated_task["attachmentUrl"])
+                try:
+                    presigned_url = s3_service.get_presigned_url(updated_task["attachmentUrl"])
+                    if presigned_url:
+                        updated_task["attachmentUrl"] = presigned_url
+                except Exception:
+                    # If presigned URL generation fails, keep the original key
+                    pass
             return updated_task
         else:
-            # Even if no update, replace with presigned URL
+            # Even if no update, replace with presigned URL (fail gracefully if presigned URL generation fails)
             if existing_task.get("attachmentUrl"):
-                existing_task["attachmentUrl"] = s3_service.get_presigned_url(existing_task["attachmentUrl"])
+                try:
+                    presigned_url = s3_service.get_presigned_url(existing_task["attachmentUrl"])
+                    if presigned_url:
+                        existing_task["attachmentUrl"] = presigned_url
+                except Exception:
+                    # If presigned URL generation fails, keep the original key
+                    pass
             return existing_task
 
     except HTTPException:

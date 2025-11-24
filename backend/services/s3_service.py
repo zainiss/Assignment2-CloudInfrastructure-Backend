@@ -59,8 +59,11 @@ class S3Service:
                 ExpiresIn=expiration
             )
             return presigned_url
-        except ClientError as e:
-            raise Exception(f"Error generating presigned URL: {str(e)}")
+        except Exception as e:
+            # Log the error but don't raise - let the caller handle it
+            # This allows tasks to be fetched even if presigned URL generation fails
+            print(f"Warning: Failed to generate presigned URL for key '{s3_key}': {str(e)}")
+            return None
 
     def _extract_key_from_url_or_key(self, url_or_key: str) -> Optional[str]:
         """Extract S3 key from URL or return the key if it's already a key"""

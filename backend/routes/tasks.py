@@ -31,9 +31,9 @@ async def create_task(
         created_at = datetime.utcnow().isoformat() + "Z"
 
         # Upload file to S3 if provided
-        attachment_url = None
+        attachment_key = None
         if file:
-            attachment_url = s3_service.upload_file(file, task_id)
+            attachment_key = s3_service.upload_file(file, task_id)
 
         # Create task data
         task_data = {
@@ -42,11 +42,16 @@ async def create_task(
             "description": description,
             "status": status,
             "createdAt": created_at,
-            "attachmentUrl": attachment_url
+            "attachmentUrl": attachment_key  # Store S3 key, will be converted to presigned URL in response
         }
 
         # Save to DynamoDB
         created_task = dynamo_service.create_task(task_data)
+        
+        # Replace S3 key with presigned URL in response
+        if created_task.get("attachmentUrl"):
+            created_task["attachmentUrl"] = s3_service.get_presigned_url(created_task["attachmentUrl"])
+        
         return created_task
 
     except Exception as e:
@@ -58,6 +63,10 @@ async def get_all_tasks():
     """Get all tasks"""
     try:
         tasks = dynamo_service.get_all_tasks()
+        # Replace S3 keys with presigned URLs in responses
+        for task in tasks:
+            if task.get("attachmentUrl"):
+                task["attachmentUrl"] = s3_service.get_presigned_url(task["attachmentUrl"])
         return tasks
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -70,6 +79,11 @@ async def get_task(task_id: str):
         task = dynamo_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+        
+        # Replace S3 key with presigned URL in response
+        if task.get("attachmentUrl"):
+            task["attachmentUrl"] = s3_service.get_presigned_url(task["attachmentUrl"])
+        
         return task
     except HTTPException:
         raise
@@ -114,15 +128,21 @@ async def update_task(
                 except:
                     pass  # Continue even if deletion fails
 
-            # Upload new file
-            attachment_url = s3_service.upload_file(file, task_id)
-            update_data["attachmentUrl"] = attachment_url
+            # Upload new file (returns S3 key)
+            attachment_key = s3_service.upload_file(file, task_id)
+            update_data["attachmentUrl"] = attachment_key
 
         # Update task
         if update_data:
             updated_task = dynamo_service.update_task(task_id, update_data)
+            # Replace S3 key with presigned URL in response
+            if updated_task.get("attachmentUrl"):
+                updated_task["attachmentUrl"] = s3_service.get_presigned_url(updated_task["attachmentUrl"])
             return updated_task
         else:
+            # Even if no update, replace with presigned URL
+            if existing_task.get("attachmentUrl"):
+                existing_task["attachmentUrl"] = s3_service.get_presigned_url(existing_task["attachmentUrl"])
             return existing_task
 
     except HTTPException:

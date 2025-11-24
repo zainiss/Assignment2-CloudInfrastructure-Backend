@@ -14,9 +14,9 @@ class S3Service:
     def upload_file(self, file: UploadFile, task_id: str) -> str:
         """Upload a file to S3 and return the URL"""
         try:
-            # Generate a unique filename
-            file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
-            s3_key = f"tasks/{task_id}/{file.filename or 'attachment'}{file_extension}"
+            # Use the original filename (it already includes the extension)
+            filename = file.filename or 'attachment'
+            s3_key = f"tasks/{task_id}/{filename}"
 
             # Read file content
             file_content = file.file.read()
@@ -41,7 +41,10 @@ class S3Service:
             # Extract key from URL
             # URL format: https://bucket-name.s3.region.amazonaws.com/key
             if url.startswith(f"https://{self.bucket_name}.s3"):
-                key = url.split(f".amazonaws.com/")[-1]
+                # Split on .amazonaws.com/ to get the key, then remove any query parameters
+                key_with_params = url.split(f".amazonaws.com/")[-1]
+                # Remove query parameters if present (for presigned URLs)
+                key = key_with_params.split('?')[0]
                 self.s3_client.delete_object(Bucket=self.bucket_name, Key=key)
                 return True
             return False
@@ -53,8 +56,12 @@ class S3Service:
         try:
             # Extract key from URL
             # URL format: https://bucket-name.s3.region.amazonaws.com/key
+            # Handle both presigned URLs (with query params) and regular URLs
             if url.startswith(f"https://{self.bucket_name}.s3"):
-                key = url.split(f".amazonaws.com/")[-1]
+                # Split on .amazonaws.com/ to get the key, then remove any query parameters
+                key_with_params = url.split(f".amazonaws.com/")[-1]
+                # Remove query parameters if present (for already presigned URLs)
+                key = key_with_params.split('?')[0]
                 
                 # Generate presigned URL
                 presigned_url = self.s3_client.generate_presigned_url(
